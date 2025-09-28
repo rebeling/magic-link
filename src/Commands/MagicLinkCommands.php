@@ -7,17 +7,16 @@ use Drupal\Core\Site\Settings;
 use Drupal\Core\Url;
 use Drupal\user\UserInterface;
 use Drush\Commands\DrushCommands;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Drush commands for Magic Link module.
  */
-final class MagicLinkCommands extends DrushCommands {
+class MagicLinkCommands extends DrushCommands {
 
   /**
    * The entity type manager.
    */
-  private EntityTypeManagerInterface $entityTypeManager;
+  protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
    * Constructs a new MagicLinkCommands object.
@@ -28,21 +27,7 @@ final class MagicLinkCommands extends DrushCommands {
   }
 
   /**
-   * {@inheritdoc}
-   */
-  public static function create(ContainerInterface $container): self {
-    return new self(
-      $container->get('entity_type.manager')
-    );
-  }
-
-  /**
    * Generate a persistent magic login link.
-   *
-   * Unlike the standard magic links, these links:
-   * - Don't expire after a single use
-   * - Have configurable expiration times (default: 1 hour)
-   * - Are intended for administrative/development use
    *
    * @command magic-link:generate
    * @aliases mli
@@ -52,26 +37,26 @@ final class MagicLinkCommands extends DrushCommands {
    * @usage drush mli
    *   Generate magic link for user 1 (1 hour expiry)
    * @usage drush mli --expire=24h
-   *   Generate magic link for user 1 (24 hour expiry)
-   * @usage drush mli --expire=3d
-   *   Generate magic link for user 1 (3 day expiry)
-   * @usage drush mli --uid=123
-   *   Generate magic link for user 123
+   *   Generate magic link for user 1 (24 hour expiry)  
+   * @usage drush mli 123 --expire=3d
+   *   Generate magic link for user 123 (3 day expiry)
    */
-  public function generate($uid = null, array $options = ['expire' => '1h', 'destination' => '/user']): void {
+  public function generate($uid = null, array $options = ['expire' => '1h', 'destination' => '/user']) {
     // Default to user 1 if no UID specified.
-    $uid = $uid ?? 1;
+    $uid = (int) ($uid ?? 1);
     
     // Load and validate user.
     $user_storage = $this->entityTypeManager->getStorage('user');
     $account = $user_storage->load($uid);
     
     if (!$account instanceof UserInterface) {
-      throw new \InvalidArgumentException("User with ID $uid does not exist.");
+      $this->logger()->error("User with ID $uid does not exist.");
+      return;
     }
     
     if (!$account->isActive()) {
-      throw new \InvalidArgumentException("User {$account->getDisplayName()} (ID: $uid) is blocked.");
+      $this->logger()->error("User {$account->getDisplayName()} (ID: $uid) is blocked.");
+      return;
     }
     
     // Parse expiration time.
@@ -82,7 +67,8 @@ final class MagicLinkCommands extends DrushCommands {
     $url = $this->buildPersistentMagicLink($account, $expire_seconds, $destination);
     
     if (!$url) {
-      throw new \RuntimeException('Failed to generate magic link. Check site configuration.');
+      $this->logger()->error('Failed to generate magic link. Check site configuration.');
+      return;
     }
     
     // Display results.
@@ -103,7 +89,8 @@ final class MagicLinkCommands extends DrushCommands {
     
     // Match pattern like "1h", "24h", "3d", "30m", etc.
     if (!preg_match('/^(\d+)([mhdw])$/', $expire, $matches)) {
-      throw new \InvalidArgumentException("Invalid expire format '$expire'. Use formats like: 30m, 1h, 24h, 3d, 1w");
+      $this->logger()->error("Invalid expire format '$expire'. Use formats like: 30m, 1h, 24h, 3d, 1w");
+      return 3600; // Default to 1 hour
     }
     
     $value = (int) $matches[1];
@@ -120,7 +107,8 @@ final class MagicLinkCommands extends DrushCommands {
     
     // Reasonable limits (1 minute to 4 weeks).
     if ($seconds < 60 || $seconds > 2419200) {
-      throw new \InvalidArgumentException("Expire time must be between 1 minute and 4 weeks.");
+      $this->logger()->error("Expire time must be between 1 minute and 4 weeks.");
+      return 3600; // Default to 1 hour
     }
     
     return $seconds;
