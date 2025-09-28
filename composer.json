@@ -1,0 +1,14 @@
+{
+  "name": "rebeling/magic-link",
+  "description": "HTMX-powered passwordless authentication for Drupal.",
+  "type": "drupal-module",
+  "license": "MIT",
+  "require": {
+    "drupal/htmx": "^1.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "Drupal\\magic_link\\": "src/"
+    }
+  }
+}
