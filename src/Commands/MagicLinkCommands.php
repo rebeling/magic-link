@@ -6,7 +6,6 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\Core\Url;
 use Drupal\user\UserInterface;
-use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -44,16 +43,22 @@ final class MagicLinkCommands extends DrushCommands {
    * - Don't expire after a single use
    * - Have configurable expiration times (default: 1 hour)
    * - Are intended for administrative/development use
+   *
+   * @command magic-link:generate
+   * @aliases mli
+   * @param int $uid User ID to generate link for. Defaults to user 1 (admin).
+   * @option expire Link expiration time (e.g., 1h, 24h, 3d). Default: 1h
+   * @option destination Destination path after login. Default: /user
+   * @usage drush mli
+   *   Generate magic link for user 1 (1 hour expiry)
+   * @usage drush mli --expire=24h
+   *   Generate magic link for user 1 (24 hour expiry)
+   * @usage drush mli --expire=3d
+   *   Generate magic link for user 1 (3 day expiry)
+   * @usage drush mli --uid=123
+   *   Generate magic link for user 123
    */
-  #[CLI\Command(name: 'magic-link:generate', aliases: ['mli'])]
-  #[CLI\Argument(name: 'uid', description: 'User ID to generate link for. Defaults to user 1 (admin).')]
-  #[CLI\Option(name: 'expire', description: 'Link expiration time (e.g., 1h, 24h, 3d). Default: 1h')]
-  #[CLI\Option(name: 'destination', description: 'Destination path after login. Default: /user')]
-  #[CLI\Usage(name: 'drush mli', description: 'Generate magic link for user 1 (1 hour expiry)')]
-  #[CLI\Usage(name: 'drush mli --expire=24h', description: 'Generate magic link for user 1 (24 hour expiry)')]
-  #[CLI\Usage(name: 'drush mli --expire=3d', description: 'Generate magic link for user 1 (3 day expiry)')]
-  #[CLI\Usage(name: 'drush mli --uid=123', description: 'Generate magic link for user 123')]
-  public function generate(?int $uid = null, array $options = ['expire' => '1h', 'destination' => '/user']): void {
+  public function generate($uid = null, array $options = ['expire' => '1h', 'destination' => '/user']): void {
     // Default to user 1 if no UID specified.
     $uid = $uid ?? 1;
     
