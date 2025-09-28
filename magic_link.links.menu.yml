@@ -1,0 +1,6 @@
+magic_link.settings:
+  title: 'Magic Link'
+  description: 'Configure Magic Link authentication settings'
+  parent: system.admin_config_people
+  route_name: magic_link.settings
+  weight: 10

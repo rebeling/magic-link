@@ -1,0 +1,172 @@
+<?php
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
+use Drupal\Core\Mail\MailManagerInterface;
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function magic_link_form_user_login_form_alter(array &$form, FormStateInterface $form_state, $form_id): void {
+  // Attach HTMX only on the login form to keep pages lean.
+  $form['#attached']['library'][] = 'htmx/htmx';
+
+  // Add a dedicated Magic Link container with email + action button.
+  $form['magic_link'] = [
+    '#type' => 'details',
+    '#title' => t('Log in with Magic Link'),
+    '#open' => TRUE,
+    '#weight' => 100,
+  ];
+
+  // Email field used for magic link (separate from username).
+  $form['magic_link']['magic_email'] = [
+    '#type' => 'email',
+    '#title' => t('Email address'),
+    '#description' => t('Enter your email address and we’ll send you a one-time login link.'),
+    '#required' => FALSE,
+    // Ensure the field posts with a flat name to simplify controller input.
+    '#parents' => ['magic_email'],
+    '#attributes' => [
+      'id' => 'magic-link-email',
+      // Validate via HTMX while typing.
+      'hx-get' => Url::fromRoute('magic_link.validate')->toString(),
+      'hx-trigger' => 'keyup changed delay:400ms',
+      'hx-target' => '#magic-link-feedback',
+      'hx-swap' => 'innerHTML',
+      'autocomplete' => 'email',
+      'inputmode' => 'email',
+    ],
+  ];
+
+  // CSRF token for POST protection.
+  $form['magic_link']['csrf_token'] = [
+    '#type' => 'hidden',
+    '#value' => \Drupal::csrfToken()->get('magic_link_request'),
+    '#attributes' => ['id' => 'magic-link-csrf-token'],
+  ];
+
+  // Button to request the magic link using HTMX.
+  $form['magic_link']['magic_submit'] = [
+    '#type' => 'button',
+    '#value' => t('Send Magic Link'),
+    '#attributes' => [
+      // Post to our controller; include the surrounding form inputs so the
+      // controller receives magic_email as form data.
+      'hx-post' => Url::fromRoute('magic_link.request')->toString(),
+      // Include our magic email field and CSRF token.
+      'hx-include' => '#magic-link-email, #magic-link-csrf-token',
+      'hx-target' => '#magic-link-feedback',
+      'hx-swap' => 'innerHTML',
+      // Disable the button while the request is in-flight.
+      'hx-disabled-elt' => 'this',
+      // Add CSRF token as header for additional security.
+      'hx-headers' => json_encode(['X-CSRF-Token' => \Drupal::csrfToken()->get('magic_link_request')]),
+    ],
+  ];
+
+  // Feedback area for HTMX responses (validation, errors, success).
+  $form['magic_link']['feedback'] = [
+    '#type' => 'container',
+    '#attributes' => ['id' => 'magic-link-feedback'],
+    'content' => [
+      '#markup' => '',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_mail().
+ */
+function magic_link_mail(string $key, array &$message, array $params): void {
+  switch ($key) {
+    case 'magic_link':
+      /** @var \Drupal\user\UserInterface|null $account */
+      $account = $params['account'] ?? NULL;
+      $url = (string) ($params['url'] ?? '');
+      
+      if (!$account) {
+        return;
+      }
+      
+      // Get configuration and sender info.
+      $config = \Drupal::config('magic_link.settings');
+      $site_config = \Drupal::config('system.site');
+      
+      // Get configured sender information.
+      $from_name = trim((string) $config->get('email.from_name'));
+      if ($from_name === '') {
+        $from_name = $site_config->get('name') ?: 'Drupal';
+      }
+      
+      $from_email = trim((string) $config->get('email.from_email'));
+      if ($from_email === '') {
+        $admin_user = \Drupal\user\Entity\User::load(1);
+        $from_email = ($admin_user && $admin_user->getEmail()) 
+          ? $admin_user->getEmail() 
+          : ($site_config->get('mail') ?: 'noreply@localhost');
+      }
+      
+      // Set sender.
+      $message['from'] = "$from_name <$from_email>";
+      
+      // Get configured templates.
+      $subject_template = $config->get('email.subject_template') ?: 'Your magic link for [site:name]';
+      $body_template = $config->get('email.body_template') ?: magic_link_get_default_body_template();
+      
+      // Replace tokens.
+      $site_name = $site_config->get('name') ?: 'Drupal';
+      $user_name = $account->getDisplayName() ?: $account->getAccountName();
+      
+      $tokens = [
+        '[user:name]' => $user_name,
+        '[site:name]' => $site_name,
+        '[magic_link:url]' => $url,
+      ];
+      
+      $message['subject'] = str_replace(array_keys($tokens), array_values($tokens), $subject_template);
+      
+      // Convert HTML body to plain text for mail manager.
+      $body_html = str_replace(array_keys($tokens), array_values($tokens), $body_template);
+      $body_text = magic_link_html_to_plain_text($body_html);
+      
+      $message['body'] = explode("\n", $body_text);
+      break;
+  }
+}
+
+/**
+ * Get default HTML body template.
+ */
+function magic_link_get_default_body_template(): string {
+  return '<p>Hello [user:name],</p>
+
+<p>Use this one-time link to log in to [site:name]:</p>
+
+<p><a href="[magic_link:url]">[magic_link:url]</a></p>
+
+<p>This link works once and may expire soon.</p>
+
+<p>If you did not request this, you can ignore this email.</p>
+
+<p>— [site:name]</p>';
+}
+
+/**
+ * Convert HTML to plain text.
+ */
+function magic_link_html_to_plain_text(string $html): string {
+  // Convert common HTML elements to text equivalents.
+  $html = str_replace(['</p>', '<br>', '<br/>', '<br />'], "\n", $html);
+  $html = str_replace(['<p>', '</div>'], "\n", $html);
+  
+  // Strip HTML tags and decode entities.
+  $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+  
+  // Normalize whitespace.
+  $text = preg_replace('/\n\s*\n/', "\n\n", $text);
+  $text = preg_replace('/[ \t]+/', ' ', $text);
+  $text = trim($text);
+  
+  return $text;
+}

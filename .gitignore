@@ -1,0 +1,29 @@
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+CLAUDE.md
+
+# Composer / PHP
+/vendor/
+/composer.lock
+
+# PHPUnit / testing
+/phpunit.xml
+/phpunit.xml.dist
+/phpunit.result.cache
+/.phpunit.cache/
+
+# Drupal-specific
+/sites/*/settings*.php
+/sites/*/services*.yml
+/sites/*/files/
+sites/*/private/
+
+# Cache / logs
+*.log
+cache/
+tmp/

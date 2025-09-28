@@ -1,0 +1,45 @@
+magic_link.validate:
+  path: '/magic-link/validate'
+  defaults:
+    _controller: '\Drupal\magic_link\Controller\MagicController::validate'
+    _title: 'Validate magic login email'
+  requirements:
+    _access: 'TRUE'
+  methods: [GET]
+
+magic_link.request:
+  path: '/magic-link/request'
+  defaults:
+    _controller: '\Drupal\magic_link\Controller\MagicController::request'
+    _title: 'Request magic login link'
+  requirements:
+    _access: 'TRUE'
+    _csrf_token: 'TRUE'
+  methods: [POST]
+
+
+magic_link.ott_login:
+  path: '/magic-link/ott/{uid}/{exp}/{nonce}/{sig}'
+  defaults:
+    _controller: '\Drupal\magic_link\Controller\MagicController::oneTimeLogin'
+    _title: 'Logging in'
+  requirements:
+    _access: 'TRUE'
+  methods: [GET]
+
+magic_link.settings:
+  path: '/admin/config/people/magic-link'
+  defaults:
+    _form: '\Drupal\magic_link\Form\MagicLinkSettingsForm'
+    _title: 'Magic Link settings'
+  requirements:
+    _permission: 'administer magic link'
+
+magic_link.persistent_login:
+  path: '/magic-link/persistent/{uid}/{exp}/{nonce}/{sig}'
+  defaults:
+    _controller: '\Drupal\magic_link\Controller\MagicController::persistentLogin'
+    _title: 'Logging in'
+  requirements:
+    _access: 'TRUE'
+  methods: [GET]

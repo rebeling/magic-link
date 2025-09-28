@@ -1,0 +1,17 @@
+link_expiry: 15
+neutral_validation: false
+email:
+  from_name: ''
+  from_email: ''
+  subject_template: 'Your magic link for [site:name]'
+  body_template: '<p>Hello [user:name],</p>
+
+<p>Use this one-time link to log in to [site:name]:</p>
+
+<p><a href="[magic_link:url]">[magic_link:url]</a></p>
+
+<p>This link works once and may expire soon.</p>
+
+<p>If you did not request this, you can ignore this email.</p>
+
+<p>— [site:name]</p>'
