@@ -4,7 +4,7 @@ A Drupal module that adds HTMX-powered passwordless authentication to the core l
 
 
 ## Requirements
-- Drupal 11
+- Drupal 11.2
 - HTMX module (`composer require 'drupal/htmx:^1.5'`)
 
 ## Features
@@ -19,6 +19,9 @@ A Drupal module that adds HTMX-powered passwordless authentication to the core l
 ```bash
 # Install dependencies
 composer require 'drupal/htmx:^1.5'
+
+composer config repositories.magic-link vcs https://github.com/rebeling/magic-link.git
+composer require rebeling/magic-link:dev-main
 
 # Enable module
 drush en magic_link -y
