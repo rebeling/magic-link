@@ -36,7 +36,8 @@ class MagicLinkSettingsForm extends ConfigFormBase {
       '#description' => $this->t('How long magic links remain valid (in minutes). Default: 15 minutes.'),
       '#default_value' => $config->get('link_expiry') ?? 15,
       '#min' => 1,
-      '#max' => 1440, // 24 hours max
+    // 24 hours max
+      '#max' => 1440,
       '#step' => 1,
       '#required' => TRUE,
       '#field_suffix' => $this->t('minutes'),
@@ -101,10 +102,10 @@ class MagicLinkSettingsForm extends ConfigFormBase {
 
     $form['email']['tokens']['list'] = [
       '#markup' => '<ul>' .
-        '<li><code>[user:name]</code> - ' . $this->t('Display name of the user') . '</li>' .
-        '<li><code>[site:name]</code> - ' . $this->t('Site name') . '</li>' .
-        '<li><code>[magic_link:url]</code> - ' . $this->t('The magic link URL') . '</li>' .
-        '</ul>',
+      '<li><code>[user:name]</code> - ' . $this->t('Display name of the user') . '</li>' .
+      '<li><code>[site:name]</code> - ' . $this->t('Site name') . '</li>' .
+      '<li><code>[magic_link:url]</code> - ' . $this->t('The magic link URL') . '</li>' .
+      '</ul>',
     ];
 
     return parent::buildForm($form, $form_state);
@@ -126,7 +127,7 @@ class MagicLinkSettingsForm extends ConfigFormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $email_values = $form_state->getValue('email');
-    
+
     $this->config('magic_link.settings')
       ->set('link_expiry', (int) $form_state->getValue('link_expiry'))
       ->set('neutral_validation', (bool) $form_state->getValue('neutral_validation'))
@@ -155,4 +156,5 @@ class MagicLinkSettingsForm extends ConfigFormBase {
 
 <p>— [site:name]</p>';
   }
+
 }

@@ -3,20 +3,31 @@
 namespace Drupal\magic_link\Commands;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Site\Settings;
 use Drupal\Core\Url;
+use Drupal\magic_link\Service\MagicLinkTokenService;
 use Drupal\user\UserInterface;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 
+/**
+ * Drush commands for generating persistent magic login links.
+ */
 final class MagicLinkCommands extends DrushCommands {
 
   public function __construct(
-    protected EntityTypeManagerInterface $entityTypeManager
+    protected EntityTypeManagerInterface $entityTypeManager,
+    protected MagicLinkTokenService $tokenService,
   ) {
     parent::__construct();
   }
 
+  /**
+   * Generate a persistent magic login link for a user.
+   *
+   * Creates a reusable magic link with configurable expiry time & destination.
+   * Unlike one-time links, persistent links can be used multiple times until
+   * they expire.
+   */
   #[CLI\Command(name: 'magic-link:generate', aliases: ['mli'])]
   #[CLI\Argument(name: 'uid', description: 'User ID to generate the link for (default: 1).')]
   #[CLI\Option(name: 'expire', description: 'Expiry time: 30m, 1h, 24h, 3d, 1w (default: 1h).')]
@@ -25,8 +36,8 @@ final class MagicLinkCommands extends DrushCommands {
   #[CLI\Usage(name: 'drush mli --expire=24h', description: 'Generate magic link for user 1 (24 hours).')]
   #[CLI\Usage(name: 'drush mli 123 --expire=3d', description: 'Generate magic link for user 123 (3 days).')]
   public function generate(
-    ?int $uid = null,
-    array $options = ['expire' => '1h', 'destination' => '/user']
+    ?int $uid = NULL,
+    array $options = ['expire' => '1h', 'destination' => '/user'],
   ): int {
     $uid = (int) ($uid ?? 1);
 
@@ -64,18 +75,30 @@ final class MagicLinkCommands extends DrushCommands {
     return self::EXIT_SUCCESS;
   }
 
+  /**
+   * Parse human-readable expiry time to seconds.
+   *
+   * Accepts formats like "30m", "1h", "24h", "3d", "1w". Values are
+   * constrained between 1 minute and 4 weeks.
+   *
+   * @param string $expire
+   *   Time string (e.g., "30m", "1h", "24h", "3d", "1w").
+   *
+   * @return int
+   *   Number of seconds, constrained between 60 and 2419200 (4 weeks).
+   */
   private function parseExpireTime(string $expire): int {
     $expire = strtolower(trim($expire));
     if (!preg_match('/^(\d+)\s*([mhdw])$/', $expire, $m)) {
       $this->logger()->warning("Invalid expire format '{$expire}'. Using default 1h. Examples: 30m, 1h, 24h, 3d, 1w");
       return 3600;
     }
-    [$all, $value, $unit] = $m;
+    [, $value, $unit] = $m;
     $value = (int) $value;
     $mult = ['m' => 60, 'h' => 3600, 'd' => 86400, 'w' => 604800][$unit] ?? 3600;
     $seconds = $value * $mult;
 
-    // Guardrails: 1 minute – 4 weeks
+    // Guardrails: 1 minute – 4 weeks.
     if ($seconds < 60 || $seconds > 60 * 60 * 24 * 28) {
       $this->logger()->warning('Expire time must be between 1 minute and 4 weeks. Using default 1h.');
       return 3600;
@@ -83,10 +106,26 @@ final class MagicLinkCommands extends DrushCommands {
     return $seconds;
   }
 
+  /**
+   * Build a persistent (reusable) magic link with custom expiry.
+   *
+   * Uses 'persist_' nonce prefix to bypass one-time enforcement,
+   * allowing the link to be used multiple times until expiration.
+   *
+   * @param \Drupal\user\UserInterface $account
+   *   User account to generate link for.
+   * @param int $expire_seconds
+   *   Number of seconds until link expires.
+   * @param string $destination
+   *   Destination path after login.
+   *
+   * @return string|null
+   *   Absolute URL or NULL on failure.
+   */
   private function buildPersistentMagicLink(UserInterface $account, int $expire_seconds, string $destination): ?string {
     $uid = (int) $account->id();
     if ($uid <= 0) {
-      return null;
+      return NULL;
     }
 
     try {
@@ -94,13 +133,13 @@ final class MagicLinkCommands extends DrushCommands {
     }
     catch (\Throwable $e) {
       $this->logger()->error('Could not generate secure nonce: ' . $e->getMessage());
-      return null;
+      return NULL;
     }
 
     $exp = time() + $expire_seconds;
     $sig = $this->signToken($uid, $exp, $nonce);
     if (!$sig) {
-      return null;
+      return NULL;
     }
 
     // Make sure this route name matches your magic_link.routing.yml.
@@ -110,21 +149,32 @@ final class MagicLinkCommands extends DrushCommands {
       'nonce' => $nonce,
       'sig' => $sig,
     ], [
-      'absolute' => true,
+      'absolute' => TRUE,
       'query' => ['destination' => $destination],
     ])->toString();
 
     return $url;
   }
 
+  /**
+   * Generate HMAC-SHA256 signature for magic link token.
+   *
+   * @param int $uid
+   *   User ID.
+   * @param int $exp
+   *   Expiration timestamp.
+   * @param string $nonce
+   *   Random nonce string.
+   *
+   * @return string|null
+   *   Base64url-encoded signature, or NULL if hash_salt is missing.
+   */
   private function signToken(int $uid, int $exp, string $nonce): ?string {
-    $salt = (string) (Settings::get('hash_salt') ?? '');
-    if ($salt === '') {
+    $sig = $this->tokenService->signToken($uid, $exp, $nonce);
+    if (!$sig) {
       $this->logger()->error('hash_salt is empty. Set $settings["hash_salt"] in settings.php.');
-      return null;
     }
-    $data = $uid . '|' . $exp . '|' . $nonce;
-    $raw = hash_hmac('sha256', $data, $salt, true);
-    return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
+    return $sig;
   }
+
 }

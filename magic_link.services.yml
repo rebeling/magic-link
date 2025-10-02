@@ -1,0 +1,13 @@
+services:
+  magic_link.token:
+    class: Drupal\magic_link\Service\MagicLinkTokenService
+
+  magic_link.mail:
+    class: Drupal\magic_link\Service\MagicLinkMailService
+    arguments: ['@config.factory', '@plugin.manager.mail', '@language_manager', '@entity_type.manager']
+
+  magic_link.commands:
+    class: Drupal\magic_link\Commands\MagicLinkCommands
+    arguments: ['@entity_type.manager', '@magic_link.token']
+    tags:
+      - { name: drush.command }

@@ -4,11 +4,11 @@ namespace Drupal\magic_link\Controller;
 
 use Drupal\Component\Utility\EmailValidatorInterface;
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
+use Drupal\magic_link\Service\MagicLinkMailService;
+use Drupal\magic_link\Service\MagicLinkTokenService;
 use Symfony\Component\HttpFoundation\RedirectResponse;
-use Drupal\Core\Site\Settings;
 use Drupal\user\UserInterface as CoreUserInterface;
 use Drupal\user\UserInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -20,15 +20,46 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class MagicController extends ControllerBase {
 
-  /** @var \Drupal\Component\Utility\EmailValidatorInterface */
+  /**
+   * The email validator interface.
+   *
+   * @var \Drupal\Component\Utility\EmailValidatorInterface
+   */
   protected EmailValidatorInterface $emailValidator;
-  /** @var \Drupal\Core\Mail\MailManagerInterface */
-  protected MailManagerInterface $mailManager;
 
+  /**
+   * The key-value expirable factory.
+   *
+   * @var \Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface
+   */
+  protected $keyValueExpirable;
+
+  /**
+   * The magic link token service.
+   *
+   * @var \Drupal\magic_link\MagicLinkTokenService
+   */
+  protected MagicLinkTokenService $tokenService;
+
+  /**
+   * The magic link mail service.
+   *
+   * @var \Drupal\magic_link\MagicLinkMailService
+   */
+  protected MagicLinkMailService $mailService;
+
+  /**
+   * {@inheritdoc}
+   */
   public static function create(ContainerInterface $container): self {
     $instance = new self();
     $instance->emailValidator = $container->get('email.validator');
-    $instance->mailManager = $container->get('plugin.manager.mail');
+    $instance->keyValueExpirable = $container->get('keyvalue.expirable');
+    $instance->tokenService = $container->get('magic_link.token');
+    $instance->mailService = $container->get('magic_link.mail');
+    // ControllerBase provides configFactory and languageManager properties.
+    $instance->configFactory = $container->get('config.factory');
+    $instance->languageManager = $container->get('language_manager');
     return $instance;
   }
 
@@ -80,7 +111,6 @@ class MagicController extends ControllerBase {
   public function request(Request $request): Response {
     // CSRF token is automatically validated by routing requirement,
     // but we can add additional validation here if needed.
-    
     $email = trim((string) ($request->request->get('magic_email') ?? $request->get('magic_email', '')));
     // Always return a neutral confirmation for privacy (no enumeration),
     // regardless of the provided email value/format. Attempt delivery only
@@ -89,7 +119,8 @@ class MagicController extends ControllerBase {
 
     $account = $proceed ? $this->loadActiveUserByEmail($email) : NULL;
     if ($account) {
-      // Try to obtain a one-time login URL. Preferred: Drupal API, fallback to Drush.
+      // Try to obtain a one-time login URL.
+      // Preferred: Drupal API, fallback to Drush.
       $login_url = $this->generateOneTimeLoginUrl($account, $request);
       if (is_string($login_url) && $login_url !== '') {
         // Always send the link via email to the account's address.
@@ -156,156 +187,27 @@ class MagicController extends ControllerBase {
     }
   }
 
-
   /**
    * Send the magic-link email to the user.
    */
   protected function sendMagicLinkEmail(UserInterface $account, string $url): void {
-    // If Drupal is not configured to use php_mail, prefer the known-good
-    // path that matches local DDEV Mailpit wiring.
-    $defaultInterface = (string) (\Drupal::config('system.mail')->get('interface.default') ?? '');
-    if ($defaultInterface !== 'php_mail') {
-      $this->sendViaPhpMail($account, $url);
-      return;
-    }
-
-    $mailManager = $this->mailManager;
-    $langcode = $account->getPreferredLangcode() ?: \Drupal::languageManager()->getDefaultLanguage()->getId();
-    $to = $account->getEmail();
-    $params = [
-      'account' => $account,
-      'url' => $url,
-    ];
-    $result = (array) $mailManager->mail('magic_link', 'magic_link', $to, $langcode, $params);
-    $ok = !empty($result['result']);
-    if (!$ok) {
-      // Fallback: Use PHP's mail() directly.
-      $this->sendViaPhpMail($account, $url);
-    }
+    $this->mailService->sendMagicLinkEmail($account, $url);
   }
-
-  /**
-   * Replace tokens in templates.
-   */
-  protected function replaceTokens(string $template, UserInterface $account, string $url): string {
-    $site_config = \Drupal::config('system.site');
-    $site_name = $site_config->get('name') ?: 'Drupal';
-    $user_name = $account->getDisplayName() ?: $account->getAccountName();
-    
-    $tokens = [
-      '[user:name]' => $user_name,
-      '[site:name]' => $site_name,
-      '[magic_link:url]' => $url,
-    ];
-    
-    return str_replace(array_keys($tokens), array_values($tokens), $template);
-  }
-
-  /**
-   * Convert HTML to plain text.
-   */
-  protected function htmlToPlainText(string $html): string {
-    // Strip HTML tags and decode entities.
-    $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    
-    // Convert common HTML elements to text equivalents.
-    $html = str_replace(['</p>', '<br>', '<br/>', '<br />'], "\n", $html);
-    $html = str_replace(['<p>', '</div>'], "\n", $html);
-    
-    // Re-strip tags after replacements.
-    $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    
-    // Normalize whitespace.
-    $text = preg_replace('/\n\s*\n/', "\n\n", $text);
-    $text = preg_replace('/[ \t]+/', ' ', $text);
-    $text = trim($text);
-    
-    return $text;
-  }
-
-  /**
-   * Get configured sender information.
-   */
-  protected function getSenderInfo(): array {
-    $config = \Drupal::config('magic_link.settings');
-    $site_config = \Drupal::config('system.site');
-    
-    // Get configured or fallback values.
-    $from_name = trim((string) $config->get('email.from_name'));
-    if ($from_name === '') {
-      $from_name = $site_config->get('name') ?: 'Drupal';
-    }
-    
-    $from_email = trim((string) $config->get('email.from_email'));
-    if ($from_email === '') {
-      // Try admin user first, then site email.
-      $admin_user = \Drupal\user\Entity\User::load(1);
-      $from_email = ($admin_user && $admin_user->getEmail()) 
-        ? $admin_user->getEmail() 
-        : ($site_config->get('mail') ?: 'noreply@localhost');
-    }
-    
-    return [$from_name, $from_email];
-  }
-
-  /**
-   * Fallback sender using PHP's mail(), useful in DDEV with Mailpit sendmail.
-   */
-  protected function sendViaPhpMail(UserInterface $account, string $url): void {
-    $config = \Drupal::config('magic_link.settings');
-    [$from_name, $from_email] = $this->getSenderInfo();
-    
-    // Get configured templates.
-    $subject_template = $config->get('email.subject_template') ?: 'Your magic link for [site:name]';
-    $body_template = $config->get('email.body_template') ?: $this->getDefaultBodyTemplate();
-    
-    // Replace tokens.
-    $subject = $this->replaceTokens($subject_template, $account, $url);
-    $body_html = $this->replaceTokens($body_template, $account, $url);
-    $body_text = $this->htmlToPlainText($body_html);
-    
-    $headers = implode("\r\n", [
-        "From: $from_name <$from_email>",
-        'Content-Type: text/plain; charset=UTF-8',
-        'X-Auth-Magic: 1',
-    ]);
-
-    $to = $account->getEmail();
-    $ok = @mail($to, $subject, $body_text, $headers);
-    if (!$ok) {
-      throw new \RuntimeException('PHP mail() fallback failed.');
-    }
-  }
-
-  /**
-   * Get default HTML body template (same as in settings form).
-   */
-  private function getDefaultBodyTemplate(): string {
-    return '<p>Hello [user:name],</p>
-
-<p>Use this one-time link to log in to [site:name]:</p>
-
-<p><a href="[magic_link:url]">[magic_link:url]</a></p>
-
-<p>This link works once and may expire soon.</p>
-
-<p>If you did not request this, you can ignore this email.</p>
-
-<p>— [site:name]</p>';
-  }
-
-  // No silent redirect or core reset destinations needed with internal OTT.
 
   /**
    * Build an internal HMAC-based one-time login URL without reset UI.
    */
   protected function buildInternalOneTimeLoginUrl(UserInterface $account, Request $request): ?string {
     $uid = (int) $account->id();
-    if ($uid <= 0) { return NULL; }
+    if ($uid <= 0) {
+      return NULL;
+    }
     $nonce = bin2hex(random_bytes(8));
     $exp = time() + $this->getLinkExpirySeconds();
-    $sig = $this->signToken($uid, $exp, $nonce);
-    if (!$sig) { return NULL; }
+    $sig = $this->tokenService->signToken($uid, $exp, $nonce);
+    if (!$sig) {
+      return NULL;
+    }
     $url = Url::fromRoute('magic_link.ott_login', [
       'uid' => $uid,
       'exp' => $exp,
@@ -321,26 +223,53 @@ class MagicController extends ControllerBase {
     return $url;
   }
 
+  /**
+   * Generate HMAC-SHA256 signature for magic link token.
+   *
+   * @param int $uid
+   *   User ID.
+   * @param int $exp
+   *   Expiration timestamp.
+   * @param string $nonce
+   *   Random nonce string.
+   *
+   * @return string|null
+   *   Base64url-encoded signature, or NULL if hash_salt is unavailable.
+   */
   protected function signToken(int $uid, int $exp, string $nonce): ?string {
-    $salt = (string) (Settings::get('hash_salt') ?? '');
-    if ($salt === '') { return NULL; }
-    $data = $uid . '|' . $exp . '|' . $nonce;
-    $raw = hash_hmac('sha256', $data, $salt, true);
-    return rtrim(strtr(base64_encode($raw), '+/', '-_'), '=');
+    return $this->tokenService->signToken($uid, $exp, $nonce);
   }
 
-  protected function verifyToken(int $uid, int $exp, string $nonce, string $sig, bool $enforce_one_time = true): bool {
-    if ($exp < time()) { return false; }
-    $expected = $this->signToken($uid, $exp, $nonce);
-    if (!$expected) { return false; }
-    // Constant-time compare
-    if (!hash_equals($expected, $sig)) { return false; }
-    
-    // Enforce one-time use via expirable keyvalue store (only for non-persistent links).
+  /**
+   * Verify magic link token signature and enforce one-time use.
+   *
+   * @param int $uid
+   *   User ID from the token.
+   * @param int $exp
+   *   Expiration timestamp.
+   * @param string $nonce
+   *   Nonce from the token.
+   * @param string $sig
+   *   Signature to verify.
+   * @param bool $enforce_one_time
+   *   Whether to enforce one-time use via keyvalue store.
+   *
+   * @return bool
+   *   TRUE if token is valid and not expired, FALSE otherwise.
+   */
+  protected function verifyToken(int $uid, int $exp, string $nonce, string $sig, bool $enforce_one_time = TRUE): bool {
+    // Verify signature and expiration using token service.
+    if (!$this->tokenService->verifyTokenSignature($uid, $exp, $nonce, $sig)) {
+      return FALSE;
+    }
+
+    // Enforce one-time use via expirable keyvalue store.
     if ($enforce_one_time) {
       try {
-        $kv = \Drupal::service('keyvalue.expirable')->get('magic_link_ott');
-        if ($kv->get($sig)) { return false; }
+        $kv = $this->keyValueExpirable->get('magic_link_ott');
+        if ($kv->get($sig)) {
+          return FALSE;
+        }
         // Store until expiration.
         $ttl = max(1, $exp - time());
         $kv->setWithExpire($sig, 1, $ttl);
@@ -349,7 +278,7 @@ class MagicController extends ControllerBase {
         // If storage is unavailable, still proceed with HMAC+expiry only.
       }
     }
-    return true;
+    return TRUE;
   }
 
   /**
@@ -371,7 +300,9 @@ class MagicController extends ControllerBase {
     }
     // Redirect to destination.
     $dest = (string) $request->query->get('destination', '/');
-    if ($dest === '') { $dest = '/'; }
+    if ($dest === '') {
+      $dest = '/';
+    }
     return new RedirectResponse($dest);
   }
 
@@ -383,26 +314,28 @@ class MagicController extends ControllerBase {
     if (!str_starts_with($nonce, 'persist_')) {
       return $this->fragment('<div class="messages messages--error">' . (string) $this->t('Invalid link format.') . '</div>');
     }
-    
+
     // Verify token without enforcing one-time use.
-    if (!$this->verifyToken($uid, $exp, $nonce, $sig, false)) {
+    if (!$this->verifyToken($uid, $exp, $nonce, $sig, FALSE)) {
       return $this->fragment('<div class="messages messages--error">' . (string) $this->t('Invalid or expired link.') . '</div>');
     }
-    
+
     // Load active user and log in.
     $account = $this->entityTypeManager()->getStorage('user')->load($uid);
     if (!$account instanceof CoreUserInterface || !$account->isActive()) {
       return $this->fragment('<div class="messages messages--error">' . (string) $this->t('Invalid account.') . '</div>');
     }
-    
+
     // Finalize login without adding messages.
     if (function_exists('user_login_finalize')) {
       user_login_finalize($account);
     }
-    
+
     // Redirect to destination.
     $dest = (string) $request->query->get('destination', '/');
-    if ($dest === '') { $dest = '/'; }
+    if ($dest === '') {
+      $dest = '/';
+    }
     return new RedirectResponse($dest);
   }
 
@@ -410,7 +343,7 @@ class MagicController extends ControllerBase {
    * Get configured link expiry time in seconds.
    */
   protected function getLinkExpirySeconds(): int {
-    $config = \Drupal::config('magic_link.settings');
+    $config = $this->config('magic_link.settings');
     $minutes = (int) ($config->get('link_expiry') ?? 15);
     return $minutes * 60;
   }
@@ -419,7 +352,8 @@ class MagicController extends ControllerBase {
    * Check if neutral validation is enabled.
    */
   protected function useNeutralValidation(): bool {
-    $config = \Drupal::config('magic_link.settings');
+    $config = $this->config('magic_link.settings');
     return (bool) ($config->get('neutral_validation') ?? FALSE);
   }
+
 }

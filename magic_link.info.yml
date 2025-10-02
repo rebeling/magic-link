@@ -1,7 +1,6 @@
 name: Magic Link
 type: module
 description: "A HTMX-powered magic-link login option to the core login form."
-version: 0.1.2
 core_version_requirement: ^11
 package: Authentication
 dependencies:
