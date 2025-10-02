@@ -10,5 +10,10 @@
     "psr-4": {
       "Drupal\\magic_link\\": "src/"
     }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Drupal\\Tests\\magic_link\\": "tests/src/"
+    }
   }
 }

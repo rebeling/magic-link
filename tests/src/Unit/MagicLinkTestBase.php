@@ -37,7 +37,7 @@ abstract class MagicLinkTestBase extends UnitTestCase {
         'email.from_name' => '',
         'email.from_email' => '',
         'email.subject_template' => 'Your magic link for [site:name]',
-        'email.body_template' => '<p>Hello [user:name],</p><p><a href="[magic_link:url]">Login</a></p>',
+        'email.body_template' => '<p>Hello [user:name],</p><p><a href="[magic_link:url]">Login a href</a> or the link [magic_link:url]</p>',
       ],
     ];
     $settings = array_merge($defaults, $overrides);

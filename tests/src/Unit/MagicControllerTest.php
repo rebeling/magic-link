@@ -225,13 +225,13 @@ class MagicControllerTest extends MagicLinkTestBase {
   }
 
   /**
-   * Ensures invalid email yields neutral confirmation.
+   * Ensures invalid email yields error message.
    */
   public function testNeutralConfirmationForInvalidEmail(): void {
     $controller = $this->buildController();
     $resp = $controller->request(Request::create('/magic-link/request', 'POST', ['magic_email' => 'invalid']));
     $this->assertSame(200, $resp->getStatusCode());
-    $this->assertStringContainsString('If the email exists in our system, a magic link was sent', (string) $resp->getContent());
+    $this->assertStringContainsString('Invalid email format', (string) $resp->getContent());
   }
 
   /**

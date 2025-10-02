@@ -44,12 +44,6 @@ class MagicLinkMailService {
    *   TRUE if email was sent successfully, FALSE otherwise.
    */
   public function sendMagicLinkEmail(UserInterface $account, string $url): bool {
-    // Check if using php_mail interface.
-    $defaultInterface = (string) ($this->configFactory->get('system.mail')->get('interface.default') ?? '');
-    if ($defaultInterface !== 'php_mail') {
-      return $this->sendViaPhpMail($account, $url);
-    }
-
     $langcode = $account->getPreferredLangcode() ?: $this->languageManager->getDefaultLanguage()->getId();
     $to = $account->getEmail();
     $params = [
@@ -61,11 +55,14 @@ class MagicLinkMailService {
     $ok = !empty($result['result']);
 
     if (!$ok) {
-      // Fallback to PHP mail().
-      return $this->sendViaPhpMail($account, $url);
+      // Fallback to PHP mail() only in production.
+      $defaultInterface = (string) ($this->configFactory->get('system.mail')->get('interface.default') ?? '');
+      if ($defaultInterface === 'php_mail') {
+        return $this->sendViaPhpMail($account, $url);
+      }
     }
 
-    return TRUE;
+    return $ok;
   }
 
   /**
