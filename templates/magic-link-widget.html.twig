@@ -1,0 +1,51 @@
+{# Non-collapsible, Olivero/Claro-styled panel #}
+<div class="divider" role="separator" aria-label="{{ 'OR'|t }}">{{ 'OR'|t }}</div>
+
+<div id="magic-link-container" class="magic-link-widget claro-details claro-details--static">
+
+  <div class="claro-details__summary">
+    <h3 class="claro-details__summary-summary">{{ 'Log in with Magic Link'|t }}</h3>
+  </div>
+
+  <div class="claro-details__wrapper">
+
+    <div class="js-form-item form-item js-form-type-email form-type-email form-item-magic-email js-form-item-magic-email">
+      <label for="magic-link-email" class="form-item__label">
+        {{ 'Email address'|t }}
+      </label>
+
+      <input
+        type="email"
+        id="magic-link-email"
+        name="magic_email"
+        autocomplete="email"
+        inputmode="email"
+        required
+        class="form-text form-element form-element--type-email"
+        aria-describedby="magic-link-email--description"
+      />
+
+      <div id="magic-link-email--description" class="form-item__description">
+        {{ "Enter your email address and we’ll send you a one-time login link."|t }}
+      </div>
+    </div>
+
+    <div class="form-actions js-form-wrapper form-wrapper">
+      <button
+        class="button button--primary"
+        type="button"
+        hx-post="{{ path('magic_link.request') }}"
+        hx-include="#magic-link-email"
+        hx-target="#magic-link-feedback"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'
+      >
+        {{ 'Send Magic Link'|t }}
+      </button>
+    </div>
+
+    <div id="magic-link-feedback"></div>
+
+  </div>
+</div>

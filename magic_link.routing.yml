@@ -18,7 +18,7 @@ magic_link.request:
     # Open by design: anonymous users must request a login link.
     # Protected by CSRF requirement and server-side validation/rate-limiting.
     _access: "TRUE"
-    _csrf_token: "TRUE"
+    _csrf_request_header_token: "TRUE" # expect X-CSRF-Token header
   methods: [POST]
 
 magic_link.ott_login:

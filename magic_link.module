@@ -17,69 +17,41 @@ use Drupal\user\UserInterface;
  * @see user_login_form()
  */
 function magic_link_form_user_login_form_alter(array &$form, FormStateInterface $form_state, $form_id): void {
-  // Attach HTMX only on the login form to keep pages lean.
-  $form['#attached']['library'][] = 'htmx/htmx';
+  // Attach HTMX from Drupal core.
+  $form['#attached']['library'][] = 'core/htmx';
 
-  // Add a dedicated Magic Link container with email + action button.
-  $form['magic_link'] = [
-    '#type' => 'details',
-    '#title' => t('Log in with Magic Link'),
-    '#open' => TRUE,
-    '#weight' => 100,
-  ];
+  $request_url = Url::fromRoute('magic_link.request');
+  $csrf_token = \Drupal::csrfToken()->get($request_url->getInternalPath());
 
-  // Email field used for magic link (separate from username).
-  $form['magic_link']['magic_email'] = [
-    '#type' => 'email',
-    '#title' => t('Email address'),
-    '#description' => t('Enter your email address and we’ll send you a one-time login link.'),
-    '#required' => FALSE,
-    // Ensure the field posts with a flat name to simplify controller input.
-    '#parents' => ['magic_email'],
-    '#attributes' => [
-      'id' => 'magic-link-email',
-      // Validate via HTMX while typing.
-      'hx-get' => Url::fromRoute('magic_link.validate')->toString(),
-      'hx-trigger' => 'keyup changed delay:400ms',
-      'hx-target' => '#magic-link-feedback',
-      'hx-swap' => 'innerHTML',
-      'autocomplete' => 'email',
-      'inputmode' => 'email',
-    ],
-  ];
-
-  // CSRF token for POST protection.
-  // phpcs:disable DrupalPractice.Objects.GlobalDrupal.GlobalDrupal
-  $csrf_token = \Drupal::service('csrf_token')->get('magic_link_request');
-  // phpcs:enable
-  $form['magic_link']['csrf_token'] = [
-    '#type' => 'hidden',
-    '#value' => $csrf_token,
-    '#attributes' => ['id' => 'magic-link-csrf-token'],
-  ];
-
-  // Button to request the magic link using HTMX.
-  $form['magic_link']['magic_submit'] = [
-    '#type' => 'button',
-    '#value' => t('Send Magic Link'),
-    '#attributes' => [
-      'hx-post' => Url::fromRoute('magic_link.request')->toString(),
-      'hx-include' => '#magic-link-email, #magic-link-csrf-token',
-      'hx-target' => '#magic-link-feedback',
-      'hx-swap' => 'innerHTML',
-      'hx-disabled-elt' => 'this',
-      // Add CSRF token as header for additional security.
-      'hx-headers' => json_encode(['X-CSRF-Token' => $csrf_token]),
-    ],
-  ];
-
-  // Feedback area for HTMX responses (validation, errors, success).
-  $form['magic_link']['feedback'] = [
+  // Place our widget after the core actions (username/password + submit).
+  // Using a container with a themed child keeps it out of the form mechanics.
+  $form['magic_link_widget'] = [
     '#type' => 'container',
-    '#attributes' => ['id' => 'magic-link-feedback'],
-    'content' => ['#markup' => ''],
+    '#weight' => 100, // Push to the bottom of the login form.
+    'content' => [
+      '#theme' => 'magic_link_widget',
+      '#csrf_token' => $csrf_token,
+      '#request_url' => $request_url->toString(),
+    ],
   ];
 }
+
+
+/**
+ * Implements hook_theme().
+ */
+function magic_link_theme() {
+  return [
+    'magic_link_widget' => [
+      'variables' => [
+        'csrf_token' => NULL,
+        'request_url' => NULL,
+      ],
+      'template' => 'magic-link-widget',
+    ],
+  ];
+}
+
 
 /**
  * Implements hook_mail().

@@ -79,23 +79,9 @@ class MagicController extends ControllerBase {
       $markup = '<div class="messages messages--error">' . (string) $this->t('Invalid email format') . '</div>';
     }
     else {
-      if ($this->useNeutralValidation()) {
-        // Neutral validation: don't reveal account existence.
-        $markup = '<div class="messages messages--status">' . (string) $this->t('Looks good — you can request a magic link.') . '</div>';
-        $status = 'ok';
-      }
-      else {
-        // Check if account exists for better UX.
-        $account = $this->loadActiveUserByEmail($email);
-        if ($account) {
-          $markup = '<div class="messages messages--status">' . (string) $this->t('Account found — you can request a magic link.') . '</div>';
-          $status = 'ok';
-        }
-        else {
-          $markup = '<div class="messages messages--warning">' . (string) $this->t('No account found with this email address.') . '</div>';
-          $status = 'warn';
-        }
-      }
+      // Always use neutral validation: don't reveal account existence.
+      $markup = '<div class="messages messages--status">' . (string) $this->t('Valid email format.') . '</div>';
+      $status = 'ok';
     }
 
     $response = new Response(Markup::create($markup));
@@ -112,10 +98,19 @@ class MagicController extends ControllerBase {
     // CSRF token is automatically validated by routing requirement,
     // but we can add additional validation here if needed.
     $email = trim((string) ($request->request->get('magic_email') ?? $request->get('magic_email', '')));
+
+    // Validate email format first and show error if invalid.
+    if ($email === '' || !$this->emailValidator->isValid($email)) {
+      $html = '<div class="messages messages--error">'
+        . (string) $this->t('Invalid email format')
+        . '</div>';
+      return $this->fragment($html);
+    }
+
     // Always return a neutral confirmation for privacy (no enumeration),
     // regardless of the provided email value/format. Attempt delivery only
     // if the email looks valid and an active account exists.
-    $proceed = ($email !== '' && $this->emailValidator->isValid($email));
+    $proceed = TRUE;
 
     $account = $proceed ? $this->loadActiveUserByEmail($email) : NULL;
     if ($account) {
