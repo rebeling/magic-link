@@ -21,13 +21,10 @@ Adds HTMX-powered passwordless authentication to Drupal’s core login form. Use
 
 ```bash
 # Install dependencies
-composer require 'drupal/htmx:^1.5'
-
-composer config repositories.magic-link vcs https://github.com/rebeling/magic-link.git
-composer require rebeling/magic-link:dev-main
+composer require 'drupal/magic_link:1.x-dev@dev'
 
 # Enable module
-drush en magic_link -y
+drush en magic_link
 ```
 
 
@@ -75,7 +72,8 @@ drush mli --expire=3d --destination=/admin # Generate link with custom destinati
 ## Testing
 
 ```bash
-vendor/bin/phpunit -c web/core web/modules/contrib/magic-link/tests
+composer require --dev phpunit/phpunit
+vendor/bin/phpunit -c web/core web/modules/contrib/magic_link/tests
 ```
 
 
@@ -84,6 +82,18 @@ vendor/bin/phpunit -c web/core web/modules/contrib/magic-link/tests
 See [Drupal Coding Standards](https://www.drupal.org/docs/develop/standards)
 
 ```bash
-vendor/bin/phpcbf web/modules/contrib/magic-link
-vendor/bin/phpcs -p -s web/modules/contrib/magic-link
+composer require --dev squizlabs/php_codesniffer drupal/coder
+vendor/bin/phpcs --config-set installed_paths vendor/drupal/coder/coder_sniffer
+vendor/bin/phpcs -i   # should list "Drupal" and "DrupalPractice"
+
+# if SlevomatCodingStandard is not listed in phpcs -i
+composer require --dev drupal/coder:^8.3 dealerdirect/phpcodesniffer-composer-installer:^1
+composer install
+
+# Lint against Drupal standards
+vendor/bin/phpcs --standard=Drupal web/modules/contrib/magic_link
+# Best-practice checks
+vendor/bin/phpcs --standard=DrupalPractice web/modules/contrib/magic_link
+# Auto-fix what can be fixed
+vendor/bin/phpcbf --standard=Drupal web/modules/contrib/magic_link
 ```
