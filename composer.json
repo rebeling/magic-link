@@ -1,5 +1,5 @@
 {
-  "name": "rebeling/magic-link",
+  "name": "drupal/magic_link",
   "description": "HTMX-powered passwordless authentication for Drupal.",
   "type": "drupal-module",
   "license": "MIT",
