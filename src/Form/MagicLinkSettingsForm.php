@@ -30,6 +30,13 @@ class MagicLinkSettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state): array {
     $config = $this->config('magic_link.settings');
 
+    $form['enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable magic link'),
+      '#description' => $this->t('If checked, the magic link option will be available on the login form.'),
+      '#default_value' => $config->get('enabled') ?? TRUE,
+    ];
+
     $form['link_expiry'] = [
       '#type' => 'number',
       '#title' => $this->t('Magic link expiry time'),
@@ -129,6 +136,7 @@ class MagicLinkSettingsForm extends ConfigFormBase {
     $email_values = $form_state->getValue('email');
 
     $this->config('magic_link.settings')
+      ->set('enabled', (bool) $form_state->getValue('enabled'))
       ->set('link_expiry', (int) $form_state->getValue('link_expiry'))
       ->set('neutral_validation', (bool) $form_state->getValue('neutral_validation'))
       ->set('email.from_name', trim((string) $email_values['from_name']))

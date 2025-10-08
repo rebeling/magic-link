@@ -17,6 +17,14 @@ use Drupal\user\UserInterface;
  * @see user_login_form()
  */
 function magic_link_form_user_login_form_alter(array &$form, FormStateInterface $form_state, $form_id): void {
+  // Check if magic link is enabled.
+  $config = \Drupal::config('magic_link.settings');
+  $enabled = $config->get('enabled') ?? TRUE;
+
+  if (!$enabled) {
+    return;
+  }
+
   // Attach HTMX from Drupal core.
   $form['#attached']['library'][] = 'core/htmx';
 
