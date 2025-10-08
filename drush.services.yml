@@ -3,5 +3,6 @@ services:
     class: Drupal\magic_link\Commands\MagicLinkCommands
     arguments:
       - "@entity_type.manager"
+      - "@magic_link.token"
     tags:
       - { name: drush.command }
